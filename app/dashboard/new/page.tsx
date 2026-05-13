@@ -7,8 +7,18 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'
 import { v4 as uuidv4 } from 'uuid'
+import { useToast } from '@/components/ui/toast'
+import * as z from 'zod'
+
+const projectSchema = z.object({
+  title: z.string().min(3, 'Title must be at least 3 characters'),
+  client_name: z.string().min(2, 'Client name is required'),
+  client_email: z.string().email('Invalid email address'),
+  deadline: z.string().optional()
+})
 
 export default function NewProjectPage() {
+  const { showToast, ToastComponent } = useToast()
   const router = useRouter()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
@@ -30,6 +40,14 @@ export default function NewProjectPage() {
     const project_id = uuidv4()
     const public_slug = Math.random().toString(36).substring(2, 15)
 
+    // Validation
+    const validation = projectSchema.safeParse(form)
+    if (!validation.success) {
+      showToast(validation.error.issues[0].message, 'error')
+      setLoading(false)
+      return
+    }
+
     // 1. Create Project
     const { error: projectError } = await supabase.from('projects').insert({
       id: project_id,
@@ -42,7 +60,7 @@ export default function NewProjectPage() {
     })
 
     if (projectError) {
-      alert(projectError.message)
+      showToast(projectError.message, 'error')
       setLoading(false)
       return
     }
@@ -69,12 +87,14 @@ export default function NewProjectPage() {
       }
     }
 
-    router.push(`/dashboard`)
+    showToast('Project created successfully!', 'success')
+    setTimeout(() => router.push(`/dashboard`), 1500)
     setLoading(false)
   }
 
   return (
     <div className="max-w-2xl mx-auto p-8">
+      {ToastComponent}
       <h1 className="text-3xl font-bold mb-8">Create New Project</h1>
       <form onSubmit={handleCreate}>
         <Card>

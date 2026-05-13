@@ -1,7 +1,5 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 export async function sendNotificationEmail({
   to,
   subject,
@@ -11,10 +9,14 @@ export async function sendNotificationEmail({
   subject: string
   text: string
 }) {
-  if (!process.env.RESEND_API_KEY) {
+  const apiKey = process.env.RESEND_API_KEY
+
+  if (!apiKey) {
     console.log('Email simulated:', { to, subject, text })
     return
   }
+
+  const resend = new Resend(apiKey)
 
   try {
     await resend.emails.send({

@@ -1,14 +1,18 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card'
 import { Download, CheckCircle, CreditCard } from 'lucide-react'
 
-export default function ClientPortalPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = use(params)
+interface PageProps {
+  params: { slug: string }
+}
+
+export default function ClientPortalPage({ params }: PageProps) {
+  const { slug } = params
   const [loading, setLoading] = useState(true)
   const [project, setProject] = useState<any>(null)
   const [invoice, setInvoice] = useState<any>(null)
@@ -22,7 +26,7 @@ export default function ClientPortalPage({ params }: { params: Promise<{ slug: s
     async function loadProject() {
       const { data: projectData } = await supabase
         .from('projects')
-        .select('*, deliverables(*), profiles(*)')
+        .select('*, deliverables(*), profiles:user_id(*)')
         .eq('public_slug', slug)
         .single()
 
@@ -38,30 +42,17 @@ export default function ClientPortalPage({ params }: { params: Promise<{ slug: s
 
         if (invoiceData) setInvoice(invoiceData)
 
-        // Track view event
-        const { data: existingViews } = await supabase
-          .from('link_events')
-          .select('id')
-          .eq('project_id', projectData.id)
-          .eq('event_type', 'viewed')
-          .limit(1)
-
-        await supabase.from('link_events').insert({
-          project_id: projectData.id,
-          event_type: 'viewed'
-        })
-
-        // Notify freelancer on first view
-        if (!existingViews || existingViews.length === 0) {
-          fetch('/api/notify', {
+        // Track view event via server-side logic
+        fetch('/api/track-view', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              to: projectData.profiles.email,
-              subject: `Project Viewed: ${projectData.title}`,
-              text: `Client ${projectData.client_name} just viewed the project link for the first time.`
+                projectId: projectData.id,
+                freelancerEmail: projectData.profiles.email,
+                clientName: projectData.client_name,
+                projectTitle: projectData.title
             })
-          }).catch(console.error)
-        }
+        }).catch(console.error)
       }
       setLoading(false)
     }
@@ -72,60 +63,70 @@ export default function ClientPortalPage({ params }: { params: Promise<{ slug: s
     if (!feedback) return
     setSubmitting(true)
 
-    await supabase.from('feedback').insert({
-      project_id: project.id,
-      deliverable_id: selectedFile || null,
-      content: feedback
-    })
-
-    await supabase.from('link_events').insert({
-      project_id: project.id,
-      event_type: 'feedback_submitted'
-    })
-
-    // Notify freelancer
-    fetch('/api/notify', {
+    const response = await fetch('/api/feedback', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        to: freelancer.email,
-        subject: `New Feedback: ${project.title}`,
-        text: `Client ${project.client_name} submitted feedback: "${feedback}"`
+        projectId: project.id,
+        deliverableId: selectedFile,
+        content: feedback,
+        freelancerEmail: freelancer.email,
+        clientName: project.client_name,
+        projectTitle: project.title
       })
-    }).catch(console.error)
-
-    setFeedback('')
-    setSubmitting(false)
-    alert('Feedback submitted! Your freelancer has been notified.')
-  }
-
-  const handlePayment = async () => {
-    // In a real app, you would initialize the transaction via Paystack API
-    // and redirect the user to the checkout URL.
-    // Here we simulate the redirect to a Paystack-like checkout page.
-
-    setSubmitting(true)
-    const { data: { user } } = await supabase.auth.getUser()
-
-    // Call our internal webhook as a mock of the payment success
-    // This is purely for demonstration of the flow in the MVP
-    const response = await fetch('/api/webhooks/paystack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            event: 'charge.success',
-            data: {
-                reference: invoice.id,
-                amount: total * 100,
-                customer: { email: project.client_email }
-            }
-        })
     })
 
     if (response.ok) {
-        alert('Mock Payment Successful! Invoice status updated.')
-        window.location.reload()
+        setFeedback('')
+        alert('Feedback submitted! Your freelancer has been notified.')
     } else {
-        alert('Mock Payment Failed.')
+        alert('Failed to submit feedback.')
+    }
+    setSubmitting(false)
+  }
+
+  const handlePayment = async () => {
+    setSubmitting(true)
+
+    const response = await fetch('/api/payments/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            invoiceId: invoice.id,
+            email: project.client_email,
+            amount: total,
+            currency: invoice.currency
+        })
+    })
+
+    const result = await response.json()
+
+    if (result.status) {
+        // In a real app, we would redirect:
+        // window.location.href = result.data.authorization_url
+
+        // For MVP mock simulation of success:
+        alert('Redirecting to Paystack... (Simulated)')
+
+        // Simulate webhook callback after a delay
+        setTimeout(async () => {
+            await fetch('/api/webhooks/paystack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event: 'charge.success',
+                    data: {
+                        reference: invoice.id,
+                        amount: total * 100,
+                        customer: { email: project.client_email }
+                    }
+                })
+            })
+            window.location.reload()
+        }, 2000)
+
+    } else {
+        alert('Failed to initialize payment.')
     }
     setSubmitting(false)
   }

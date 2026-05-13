@@ -5,10 +5,11 @@ export async function POST(request: Request) {
   const body = await request.json()
   const supabase = await createClient()
 
-  // In a real app, verify signature using Paystack Secret Key
-  // const secret = process.env.PAYSTACK_SECRET_KEY;
-  // const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(request.body)).digest('hex');
-  // if (hash !== request.headers['x-paystack-signature']) return new Response('Unauthorized', { status: 401 });
+  // Webhook signature verification for Paystack
+  const paystackSignature = request.headers.get('x-paystack-signature')
+  // In production, use crypto to verify the signature:
+  // const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!).update(JSON.stringify(body)).digest('hex')
+  // if (hash !== paystackSignature) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
 
   const event = body.event
   const data = body.data

@@ -39,8 +39,6 @@ export default function DashboardPage() {
     loadProjects()
   }, [supabase])
 
-  if (loading) return <div className="p-8 text-center">Loading your projects...</div>
-
   return (
     <div className="max-w-6xl mx-auto p-8">
       <div className="flex justify-between items-center mb-8">
@@ -57,7 +55,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {projects.length === 0 ? (
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1,2,3].map(i => (
+            <Card key={i} className="h-64 animate-pulse bg-slate-50" />
+          ))}
+        </div>
+      ) : projects.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="text-slate-500 mb-4">No projects yet. Create your first one to get started!</p>
           <Link href="/dashboard/new">

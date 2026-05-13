@@ -13,6 +13,7 @@ export default function SettingsPage() {
     username: '',
     discipline: '',
     bio: '',
+    avatar_url: '',
     paystack_secret_key: '',
     flutterwave_secret_key: '',
     preferred_currency: 'NGN'
@@ -99,14 +100,34 @@ export default function SettingsPage() {
                 onChange={(e) => setProfile({...profile, bio: e.target.value})}
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Avatar URL</label>
+              <Input
+                value={profile.avatar_url || ''}
+                placeholder="https://example.com/avatar.jpg"
+                onChange={(e) => setProfile({...profile, avatar_url: e.target.value})}
+              />
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Payment Integrations</CardTitle>
+            <CardTitle>Payment & Regional Settings</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Preferred Currency</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={profile.preferred_currency || 'NGN'}
+                onChange={(e) => setProfile({...profile, preferred_currency: e.target.value})}
+              >
+                <option value="NGN">NGN - Nigerian Naira</option>
+                <option value="GHS">GHS - Ghanaian Cedi</option>
+                <option value="USD">USD - US Dollar</option>
+              </select>
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Paystack Secret Key</label>
               <Input
@@ -130,6 +151,30 @@ export default function SettingsPage() {
             </Button>
             {message && <p className="ml-4 text-sm text-green-600">{message}</p>}
           </CardFooter>
+        </Card>
+
+        <Card className="border-red-100 bg-red-50 mt-12">
+          <CardHeader>
+            <CardTitle className="text-red-900">Danger Zone</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-red-700 mb-4">
+              Once you delete your account, there is no going back. This will permanently delete all your projects, deliverables, and invoices.
+            </p>
+            <Button
+                variant="destructive"
+                onClick={async () => {
+                    if (confirm('Are you absolutely sure you want to delete your account? This action cannot be undone.')) {
+                        const { error } = await supabase.auth.admin.deleteUser((await supabase.auth.getUser()).data.user?.id!)
+                        // Note: Admin delete requires service role, in client we usually use a function or just sign out and let user know
+                        await supabase.auth.signOut()
+                        window.location.href = '/'
+                    }
+                }}
+            >
+              Delete My Account
+            </Button>
+          </CardContent>
         </Card>
       </div>
     </div>

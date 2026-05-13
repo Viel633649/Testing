@@ -1,19 +1,26 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'
 import { Trash2, Plus, Download, MessageSquare } from 'lucide-react'
+import { Project, Invoice, InvoiceItem, Feedback } from '@/lib/types'
 
-export default function ProjectManagementPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+interface PageProps {
+  params: { id: string }
+}
+
+export default function ProjectManagementPage({ params }: PageProps) {
+  const { id } = params
   const [loading, setLoading] = useState(true)
-  const [project, setProject] = useState<any>(null)
-  const [invoice, setInvoice] = useState<any>(null)
-  const [items, setItems] = useState<any[]>([{ description: '', quantity: 1, unit_price: 0 }])
-  const [feedback, setFeedback] = useState<any[]>([])
+  const [project, setProject] = useState<Project | null>(null)
+  const [invoice, setInvoice] = useState<Invoice | null>(null)
+  const [items, setItems] = useState<any[]>([])
+  const [feedback, setFeedback] = useState<Feedback[]>([])
+  const [events, setEvents] = useState<any[]>([])
+  const [updatingStatus, setUpdatingStatus] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
@@ -44,10 +51,32 @@ export default function ProjectManagementPage({ params }: { params: Promise<{ id
 
       if (feedbackData) setFeedback(feedbackData)
 
+      const { data: eventData } = await supabase
+        .from('link_events')
+        .select('*')
+        .eq('project_id', id)
+        .order('occurred_at', { ascending: false })
+        .limit(10)
+
+      if (eventData) setEvents(eventData)
+
       setLoading(false)
     }
     loadData()
   }, [id, supabase])
+
+  const handleUpdateStatus = async (newStatus: string) => {
+    setUpdatingStatus(true)
+    const { error } = await supabase
+      .from('projects')
+      .update({ status: newStatus })
+      .eq('id', id)
+
+    if (!error && project) {
+      setProject({ ...project, status: newStatus as any })
+    }
+    setUpdatingStatus(false)
+  }
 
   const handleSaveInvoice = async () => {
     setLoading(true)
@@ -62,7 +91,8 @@ export default function ProjectManagementPage({ params }: { params: Promise<{ id
         .insert({
           project_id: id,
           user_id: user.id,
-          currency: 'NGN',
+          currency: invoice?.currency || 'NGN',
+          due_date: invoice?.due_date || null,
           status: 'draft'
         })
         .select()
@@ -72,7 +102,12 @@ export default function ProjectManagementPage({ params }: { params: Promise<{ id
     }
 
     // Delete old items and insert new ones
-    if (currentInvoiceId) {
+    if (currentInvoiceId && invoice) {
+      await supabase.from('invoices').update({
+          currency: invoice.currency,
+          due_date: invoice.due_date
+      }).eq('id', currentInvoiceId)
+
       await supabase.from('invoice_items').delete().eq('invoice_id', currentInvoiceId)
       await supabase.from('invoice_items').insert(
         items.map(item => ({
@@ -96,24 +131,64 @@ export default function ProjectManagementPage({ params }: { params: Promise<{ id
     setItems(newItems)
   }
 
-  if (loading && !project) return <div className="p-8">Loading...</div>
+  if (loading || !project) return <div className="p-8">Loading...</div>
 
   const total = items.reduce((acc, item) => acc + (item.quantity * item.unit_price), 0)
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold">{project.title}</h1>
-          <p className="text-slate-500">Client: {project.client_name} ({project.client_email})</p>
+          <p className="text-slate-500 mb-4">Client: {project.client_name} ({project.client_email})</p>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase text-slate-400">Status:</span>
+            <select
+              value={project.status}
+              disabled={updatingStatus}
+              onChange={(e) => handleUpdateStatus(e.target.value)}
+              className="text-xs font-medium bg-slate-100 border-none rounded px-2 py-1 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="active">Active</option>
+              <option value="awaiting_feedback">Awaiting Feedback</option>
+              <option value="revision">Revision</option>
+              <option value="completed">Completed</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
         </div>
-        <Button variant="outline" onClick={() => window.open(`/p/${project.public_slug}`, '_blank')}>
-          View Client Link
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => window.open(`/p/${project.public_slug}`, '_blank')}>
+            View Client Link
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <section className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" /> Recent Activity
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {events.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">No activity recorded yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {events.map(event => (
+                    <li key={event.id} className="text-xs flex justify-between items-center text-slate-600">
+                      <span className="capitalize">{event.event_type.replace('_', ' ')}</span>
+                      <span className="text-slate-400">{new Date(event.occurred_at).toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
@@ -165,6 +240,28 @@ export default function ProjectManagementPage({ params }: { params: Promise<{ id
               <CardTitle>Invoice Builder</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-slate-100">
+                <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">Currency</label>
+                    <select
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={invoice?.currency || 'NGN'}
+                        onChange={(e) => setInvoice(prev => prev ? {...prev, currency: e.target.value} : null)}
+                    >
+                        <option value="NGN">NGN</option>
+                        <option value="GHS">GHS</option>
+                        <option value="USD">USD</option>
+                    </select>
+                </div>
+                <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">Due Date</label>
+                    <Input
+                        type="date"
+                        value={invoice?.due_date || ''}
+                        onChange={(e) => setInvoice(prev => prev ? {...prev, due_date: e.target.value} : null)}
+                    />
+                </div>
+              </div>
               {items.map((item, index) => (
                 <div key={index} className="grid grid-cols-12 gap-2 items-end border-b pb-4 last:border-0">
                   <div className="col-span-6 space-y-1">
@@ -205,7 +302,7 @@ export default function ProjectManagementPage({ params }: { params: Promise<{ id
 
               <div className="pt-4 flex justify-between items-center text-xl font-bold">
                 <span>Total:</span>
-                <span>NGN {total.toLocaleString()}</span>
+                <span>{invoice?.currency || 'NGN'} {total.toLocaleString()}</span>
               </div>
             </CardContent>
             <CardFooter>
